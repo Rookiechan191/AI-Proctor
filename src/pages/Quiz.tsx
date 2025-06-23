@@ -8,6 +8,8 @@ import QuizPage4 from './QuizPage4';
 import WarningDialog from '../components/WarningDialog';
 import TabSwitchWarning from '../components/TabSwitchWarning';
 import WebcamFeed from '../components/WebcamFeed';
+import ExamRules from '../components/ExamRules';
+import ExamTimer from '../components/ExamTimer';
 import { setupQuizSecurity, enterFullscreen } from '../utils/quizSecurity';
 
 interface QuizAnswers {
@@ -15,39 +17,63 @@ interface QuizAnswers {
 }
 
 const MAX_TAB_SWITCHES = 15;
+const EXAM_DURATION = 60; // 60 minutes
 
 const Quiz = () => {
   const navigate = useNavigate();
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(0); // 0 = rules page, 1-4 = quiz pages
   const [answers, setAnswers] = useState<QuizAnswers>({});
   const [showWarning, setShowWarning] = useState(false);
   const [showTabWarning, setShowTabWarning] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [examStarted, setExamStarted] = useState(false);
+  const [examEnded, setExamEnded] = useState(false);
 
   useEffect(() => {
     const cleanup = setupQuizSecurity(
       // Fullscreen exit handler
       () => {
-        setShowWarning(true);
+        if (examStarted && !examEnded) {
+          setShowWarning(true);
+        }
       },
       // Tab switch handler
       () => {
-        setTabSwitchCount(prev => {
-          const newCount = prev + 1;
-          setShowTabWarning(true);
-          // Auto end exam if max attempts reached
-          if (newCount >= MAX_TAB_SWITCHES) {
-            setTimeout(() => {
-              navigate('/');
-            }, 3000); // Give them 3 seconds to see the final warning
-          }
-          return newCount;
-        });
+        if (examStarted && !examEnded) {
+          setTabSwitchCount(prev => {
+            const newCount = prev + 1;
+            setShowTabWarning(true);
+            // Auto end exam if max attempts reached
+            if (newCount >= MAX_TAB_SWITCHES) {
+              setTimeout(() => {
+                handleTimeUp();
+              }, 3000); // Give them 3 seconds to see the final warning
+            }
+            return newCount;
+          });
+        }
       }
     );
     return () => cleanup();
-  }, [navigate]);
+  }, [navigate, examStarted, examEnded]);
+
+  const handleAcceptRules = () => {
+    setExamStarted(true);
+    setCurrentPage(1);
+    enterFullscreen();
+  };
+
+  const handleTimeUp = () => {
+    setExamEnded(true);
+    // Auto-submit the exam when time runs out
+    handleSubmitExam();
+  };
+
+  const handleTimeWarning = (timeLeft: number) => {
+    // You can add additional warnings or notifications here
+    console.log(`Warning: ${timeLeft} minutes remaining`);
+  };
 
   const handleNextPage = () => {
     if (currentPage < 4) {
@@ -113,14 +139,36 @@ const Quiz = () => {
     }
   };
 
+  // Show rules page first
+  if (currentPage === 0) {
+    return (
+      <ExamRules 
+        onAccept={handleAcceptRules}
+        examTitle="AI Proctored Online Exam"
+        examDuration={EXAM_DURATION}
+      />
+    );
+  }
+
   return (
     <>
+      {/* Timer - only show when exam is started and not ended */}
+      {examStarted && !examEnded && (
+        <ExamTimer
+          duration={EXAM_DURATION}
+          onTimeUp={handleTimeUp}
+          onWarning={handleTimeWarning}
+        />
+      )}
+
       <QuizLayout
         currentPage={currentPage}
         totalPages={4}
         onNext={handleNextPage}
         onPrev={handlePrevPage}
         onSubmit={handleSubmitExam}
+        examStarted={examStarted}
+        examEnded={examEnded}
       >
         {currentPage === 1 && (
           <QuizPage1 

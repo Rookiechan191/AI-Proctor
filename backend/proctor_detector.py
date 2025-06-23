@@ -10,8 +10,8 @@ class ProctorDetector:
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=3,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7
         )
 
         # Initialize YOLO model for device and face detection
@@ -19,7 +19,7 @@ class ProctorDetector:
         self.device_classes = {67: 'cell phone', 73: 'laptop', 62: 'monitor/tv'}
         self.face_class = 0  # YOLO class for face
         self.device_confidence = 0.35
-        self.face_confidence = 0.5
+        self.face_confidence = 0.7
 
         # Gaze detection threshold
         self.gaze_threshold = 0.12
@@ -50,14 +50,18 @@ class ProctorDetector:
         
         # Count faces detected by YOLO
         face_count = 0
+        face_boxes = []
+        
         for result in yolo_results:
             for box in result.boxes:
                 cls = int(box.cls[0])
                 conf = float(box.conf[0])
                 
-                # Check for faces
+                # Check for faces with higher confidence
                 if cls == self.face_class and conf > self.face_confidence:
                     face_count += 1
+                    face_boxes.append(box.xyxy[0])  # Store face box coordinates
+                    
                     # Get face region for detailed analysis
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     face_region = frame[y1:y2, x1:x2]
@@ -82,9 +86,30 @@ class ProctorDetector:
                 elif cls in self.device_classes and conf > self.device_confidence:
                     violations['device_detected'] = True
 
-        # Set multiple faces violation if more than one face detected
+        # Set multiple faces violation only if we have clear evidence of multiple faces
         if face_count > 1:
-            violations['multiple_faces'] = True
+            # Additional check: verify that faces are not too close to each other
+            # (to avoid false positives from face detection artifacts)
+            is_multiple_faces = True
+            for i in range(len(face_boxes)):
+                for j in range(i + 1, len(face_boxes)):
+                    box1 = face_boxes[i]
+                    box2 = face_boxes[j]
+                    
+                    # Calculate distance between face centers
+                    center1 = ((box1[0] + box1[2])/2, (box1[1] + box1[3])/2)
+                    center2 = ((box2[0] + box2[2])/2, (box2[1] + box2[3])/2)
+                    distance = math.sqrt((center1[0] - center2[0])**2 + (center1[1] - center2[1])**2)
+                    
+                    # If faces are too close, it might be a false positive
+                    if distance < 50:  # Minimum distance threshold in pixels
+                        is_multiple_faces = False
+                        break
+                
+                if not is_multiple_faces:
+                    break
+            
+            violations['multiple_faces'] = is_multiple_faces
 
         return violations
 

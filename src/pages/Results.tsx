@@ -104,7 +104,7 @@ const Results: React.FC = () => {
                 <div className="space-y-4">
                   {violations.map((violation, index) => (
                     <div
-                      key={index}
+                      key={`${violation.type}-${violation.timestamp}`}
                       className="bg-red-50 border-l-4 border-red-400 p-4 rounded"
                     >
                       <div className="flex items-start">
@@ -142,12 +142,12 @@ const Results: React.FC = () => {
         )}
 
         <div className="flex justify-center">
-          <button
-            onClick={handleBackToHome}
+        <button 
+          onClick={handleBackToHome}
             className="bg-emerald-600 text-white px-6 py-2 rounded hover:bg-emerald-700 transition-colors"
-          >
-            Back to Home
-          </button>
+        >
+          Back to Home
+        </button>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { SignIn } from './components/SignIn';
 import Quiz from './pages/Quiz';
 import Results from './pages/Results';
 import ExamDetails from './pages/ExamDetails';
+import FaceRecognition from './pages/FaceRecognition';
 
 function HomePage() {
   return (
@@ -25,6 +26,7 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/exam-details" element={<ExamDetails />} />
+        <Route path="/face-recognition" element={<FaceRecognition />} />
         <Route path="/quiz" element={<Quiz />} />
         <Route path="/results" element={<Results />} />
       </Routes>

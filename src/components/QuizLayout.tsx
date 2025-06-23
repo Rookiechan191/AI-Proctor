@@ -7,6 +7,8 @@ interface QuizLayoutProps {
   onNext: () => void;
   onPrev: () => void;
   onSubmit: () => void;
+  examStarted?: boolean;
+  examEnded?: boolean;
 }
 
 const QuizLayout: React.FC<QuizLayoutProps> = ({
@@ -15,7 +17,9 @@ const QuizLayout: React.FC<QuizLayoutProps> = ({
   totalPages,
   onNext,
   onPrev,
-  onSubmit
+  onSubmit,
+  examStarted = false,
+  examEnded = false
 }) => {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -47,9 +51,9 @@ const QuizLayout: React.FC<QuizLayoutProps> = ({
             <div className="flex justify-between items-center max-w-4xl mx-auto">
               <button
                 onClick={onPrev}
-                disabled={currentPage === 1}
+                disabled={currentPage === 1 || examEnded}
                 className={`px-8 py-3 rounded-lg text-base font-medium transition-colors ${
-                  currentPage === 1
+                  currentPage === 1 || examEnded
                     ? 'bg-gray-300 cursor-not-allowed'
                     : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg'
                 }`}
@@ -58,9 +62,14 @@ const QuizLayout: React.FC<QuizLayoutProps> = ({
               </button>
               <button
                 onClick={currentPage === totalPages ? onSubmit : onNext}
-                className="px-8 py-3 rounded-lg text-base font-medium transition-colors bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg"
+                disabled={examEnded}
+                className={`px-8 py-3 rounded-lg text-base font-medium transition-colors ${
+                  examEnded
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg'
+                }`}
               >
-                {currentPage === totalPages ? 'Submit' : 'Next'}
+                {examEnded ? 'Exam Ended' : currentPage === totalPages ? 'Submit' : 'Next'}
               </button>
             </div>
           </div>

@@ -7,6 +7,10 @@ from proctor_detector import ProctorDetector
 from models import Violation, SessionLocal, Base, engine
 from datetime import datetime, timedelta
 import pytz
+import os
+from PIL import Image
+import io
+from face_verification import FaceVerificationService
 
 app = Flask(__name__)
 CORS(app)
@@ -17,8 +21,97 @@ Base.metadata.create_all(bind=engine)
 # Initialize the proctor detector
 detector = ProctorDetector()
 
+# Initialize face verification service
+face_verifier = FaceVerificationService()
+
+# Create directory for storing face recognition images
+FACE_IMAGES_DIR = 'face_images'
+os.makedirs(FACE_IMAGES_DIR, exist_ok=True)
+
 # Time window for duplicate detection (in seconds)
 DUPLICATE_WINDOW = 2
+
+@app.route('/upload_face_image', methods=['POST'])
+def upload_face_image():
+    try:
+        # Get the base64 encoded image from the request
+        data = request.json
+        image_data = data['image'].split(',')[1]  # Remove the data URL prefix
+        image_bytes = base64.b64decode(image_data)
+        
+        # Get student ID and view type from the request
+        student_id = data.get('student_id')
+        view_type = data.get('view_type')  # 'front', 'left', 'right'
+        
+        if not student_id or not view_type:
+            return jsonify({
+                'success': False,
+                'error': 'Student ID and view type are required'
+            }), 400
+        
+        # Convert to PIL Image
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Convert to RGB if necessary (remove alpha channel)
+        if image.mode in ('RGBA', 'LA', 'P'):
+            image = image.convert('RGB')
+        
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{student_id}_{view_type}_{timestamp}.png"
+        filepath = os.path.join(FACE_IMAGES_DIR, filename)
+        
+        # Save the image
+        image.save(filepath)
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'filepath': filepath
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/get_face_images', methods=['GET'])
+def get_face_images():
+    try:
+        student_id = request.args.get('student_id')
+        
+        if not student_id:
+            return jsonify({
+                'success': False,
+                'error': 'Student ID is required'
+            }), 400
+        
+        # Get all images for the student
+        images = []
+        if os.path.exists(FACE_IMAGES_DIR):
+            for filename in os.listdir(FACE_IMAGES_DIR):
+                if filename.startswith(f"{student_id}_"):
+                    filepath = os.path.join(FACE_IMAGES_DIR, filename)
+                    file_stat = os.stat(filepath)
+                    images.append({
+                        'filename': filename,
+                        'view_type': filename.split('_')[1],
+                        'timestamp': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                        'size': file_stat.st_size
+                    })
+        
+        # Sort by timestamp (newest first)
+        images.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'images': images
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/analyze_frame', methods=['POST'])
 def analyze_frame():
@@ -167,6 +260,79 @@ def report_violation():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/verify_face', methods=['POST'])
+def verify_face():
+    """Verify if the live face matches the reference images for a student."""
+    try:
+        data = request.json
+        student_id = data.get('student_id')
+        live_image = data.get('image')
+        
+        if not student_id or not live_image:
+            return jsonify({
+                'success': False,
+                'error': 'Student ID and live image are required'
+            }), 400
+        
+        # Perform face verification
+        result = face_verifier.verify_face(student_id, live_image)
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/face_verification_status', methods=['GET'])
+def face_verification_status():
+    """Get the verification status for a student."""
+    try:
+        student_id = request.args.get('student_id')
+        
+        if not student_id:
+            return jsonify({
+                'success': False,
+                'error': 'Student ID is required'
+            }), 400
+        
+        status = face_verifier.get_verification_status(student_id)
+        
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/load_reference_images', methods=['POST'])
+def load_reference_images():
+    """Load reference images for a student."""
+    try:
+        data = request.json
+        student_id = data.get('student_id')
+        
+        if not student_id:
+            return jsonify({
+                'success': False,
+                'error': 'Student ID is required'
+            }), 400
+        
+        success = face_verifier.load_reference_images(student_id)
+        
+        return jsonify({
+            'success': success,
+            'message': 'Reference images loaded successfully' if success else 'Failed to load reference images'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
