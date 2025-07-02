@@ -48,7 +48,7 @@ venv/
 *.pt
 *.pth
 *.h5
-*.weights
+#*.weights
 
 # Editor directories and files
 .vscode/*
