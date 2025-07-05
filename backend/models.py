@@ -7,16 +7,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Create database URL for SQLite
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./ai_proctor.db')
+# Use PostgreSQL as the default database, targeting the report schema
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres_stage:Qwertyuiop123$@blackbuck-stage.postgres.database.azure.com:5432/postgres-stage')
 
 # Create engine and session
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 class Violation(Base):
     __tablename__ = "violations"
+    __table_args__ = {'schema': 'report'}
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(String, index=True)
@@ -26,8 +27,8 @@ class Violation(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     details = Column(String)  # Additional details about the violation
 
-# Create all tables
-Base.metadata.create_all(bind=engine)
+# Do not create tables in production PostgreSQL
+# Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()

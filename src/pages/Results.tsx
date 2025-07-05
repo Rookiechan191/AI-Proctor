@@ -101,33 +101,54 @@ const Results: React.FC = () => {
                   <AlertTriangle className="mr-2" />
                   Detected Violations
                 </h2>
-                <div className="space-y-4">
-                  {violations.map((violation, index) => (
-                    <div
-                      key={`${violation.type}-${violation.timestamp}`}
-                      className="bg-red-50 border-l-4 border-red-400 p-4 rounded"
-                    >
-                      <div className="flex items-start">
-                        <span className="text-2xl mr-3">
-                          {getViolationIcon(violation.type)}
-                        </span>
-                        <div>
-                          <h3 className="font-medium text-red-800 capitalize">
-                            {violation.type.replace('_', ' ')}
-                          </h3>
-                          <p className="text-sm text-red-600">
-                            {violation.details}
-                          </p>
-                          <p className="text-xs text-red-500 mt-1">
-                            Detected at: {formatTimestamp(violation.timestamp)}
-                          </p>
-                          <p className="text-xs text-red-500">
-                            Confidence: {Math.round(violation.confidence * 100)}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-red-50 border border-red-200 rounded shadow text-sm">
+                    <thead className="bg-red-100 sticky top-0 z-10">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-red-800 font-semibold whitespace-nowrap">
+                          <span className="mr-1">⚠️</span>Type
+                        </th>
+                        <th className="px-4 py-2 text-left text-red-800 font-semibold whitespace-nowrap">
+                          <span className="mr-1">📝</span>Details
+                        </th>
+                        <th className="px-4 py-2 text-left text-red-800 font-semibold whitespace-nowrap">
+                          <span className="mr-1">⏰</span>Timestamps
+                        </th>
+                        <th className="px-4 py-2 text-left text-red-800 font-semibold whitespace-nowrap">
+                          <span className="mr-1">📊</span>Confidence
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(
+                        violations.reduce((acc, v) => {
+                          if (!acc[v.type]) {
+                            acc[v.type] = { ...v, timestamps: [v.timestamp] };
+                          } else {
+                            acc[v.type].timestamps.push(v.timestamp);
+                          }
+                          return acc;
+                        }, {} as Record<string, Violation & { timestamps: string[] }>))
+                        .map(([type, v], idx) => (
+                          <tr key={type} className={
+                            `border-t border-red-200 ${idx % 2 === 0 ? 'bg-red-50' : 'bg-red-100'} hover:bg-red-200 transition-colors`}
+                          >
+                            <td className="px-4 py-2 flex items-center font-medium text-red-900">
+                              <span className="text-2xl mr-2">{getViolationIcon(type)}</span>
+                              <span className="capitalize mr-2">{type.replace('_', ' ')}</span>
+                              <span className="ml-auto bg-red-200 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                                {v.timestamps.length}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-red-700 max-w-xs truncate" title={v.details}>{v.details}</td>
+                            <td className="px-4 py-2 text-xs text-red-600 max-w-xs overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-red-300 scrollbar-track-red-100" style={{maxWidth: '220px'}} title={v.timestamps.map(ts => formatTimestamp(ts)).join(', ')}>
+                              {v.timestamps.map(ts => formatTimestamp(ts)).join(', ')}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-red-700 font-semibold">{Math.round(v.confidence * 100)}%</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : (
