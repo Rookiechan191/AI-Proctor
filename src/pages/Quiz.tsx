@@ -29,12 +29,14 @@ const Quiz = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [examStarted, setExamStarted] = useState(false);
   const [examEnded, setExamEnded] = useState(false);
+  const [fullscreenExitCount, setFullscreenExitCount] = useState(0);
 
   useEffect(() => {
     const cleanup = setupQuizSecurity(
       // Fullscreen exit handler
       () => {
         if (examStarted && !examEnded) {
+          setFullscreenExitCount(prev => prev + 1);
           setShowWarning(true);
         }
       },
@@ -90,17 +92,16 @@ const Quiz = () => {
   const handleSubmitExam = async () => {
     try {
       setIsSubmitting(true);
-      
       // Here you would typically send the answers to your backend
       // For now, we'll simulate an API call with a timeout
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
       // Log the answers for demonstration
       console.log('Exam submitted with answers:', answers);
-      
+      // Store fullscreen exit count and tab switch count for results page
+      localStorage.setItem('fullscreenExitCount', fullscreenExitCount.toString());
+      localStorage.setItem('tabSwitchCount', tabSwitchCount.toString());
       // Navigate to the results page to view violations
       navigate('/results');
-      
     } catch (error) {
       console.error('Error submitting exam:', error);
       // Handle error appropriately
@@ -214,6 +215,7 @@ const Quiz = () => {
         isOpen={showWarning}
         onClose={handleReturnToExam}
         onEndExam={handleEndExam}
+        fullscreenExitCount={fullscreenExitCount}
       />
 
       <TabSwitchWarning

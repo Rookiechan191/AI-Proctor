@@ -5,9 +5,10 @@ interface WarningDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onEndExam: () => void;
+  fullscreenExitCount?: number;
 }
 
-const WarningDialog: React.FC<WarningDialogProps> = ({ isOpen, onClose, onEndExam }) => {
+const WarningDialog: React.FC<WarningDialogProps> = ({ isOpen, onClose, onEndExam, fullscreenExitCount }) => {
   if (!isOpen) return null;
 
   return (
@@ -33,7 +34,13 @@ const WarningDialog: React.FC<WarningDialogProps> = ({ isOpen, onClose, onEndExa
             Warning: Fullscreen Exit Attempt
           </h3>
         </div>
-        
+        {fullscreenExitCount !== undefined && (
+          <div className="mb-4 text-center">
+            <span className="inline-block bg-red-200 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+              Fullscreen exits: {fullscreenExitCount}
+            </span>
+          </div>
+        )}
         <p className="text-gray-600 mb-8">
           You attempted to exit fullscreen mode. This action is not allowed during the exam. 
           Would you like to end the exam or return to it?

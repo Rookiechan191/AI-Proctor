@@ -87,10 +87,10 @@ class FaceVerificationService:
         img_str = b64.b64encode(buffer.getvalue()).decode()
         return f"data:image/png;base64,{img_str}"
     
-    def verify_face(self, student_id, live_image_base64, threshold=0.85):
+    def verify_face(self, student_id, live_image_base64, threshold=None):
         """
-        Verify if the live image matches the reference images for the student.
-        Simplified logic: just check if it's the same person or not.
+        Enhanced face verification for 3-angle system.
+        Uses adaptive thresholds and intelligent matching logic.
         """
         try:
             # Check if reference embeddings are loaded
@@ -103,9 +103,21 @@ class FaceVerificationService:
                         'verified': False
                     }
             
+            # Adaptive threshold based on number of reference images
+            if threshold is None:
+                num_references = len(self.reference_embeddings[student_id])
+                if num_references >= 3:
+                    threshold = 0.82  # More lenient for 3-angle system
+                elif num_references >= 2:
+                    threshold = 0.78  # Medium for 2-angle system
+                else:
+                    threshold = 0.75  # Strict for single angle
+                print(f"[DEBUG] Using adaptive threshold: {threshold} (based on {num_references} reference images)")
+            
             # Detect face in live image
             face_crop = detect_face_from_base64(live_image_base64)
             if face_crop is None:
+                print(f"[DEBUG] No face detected in live image for student {student_id}")
                 return {
                     'success': False,
                     'error': 'No face detected in live image',
@@ -115,6 +127,7 @@ class FaceVerificationService:
             # Compute embedding for live face
             live_embedding = self.recognizer.get_embedding(face_crop)
             if live_embedding is None:
+                print(f"[DEBUG] Failed to compute embedding for live face for student {student_id}")
                 return {
                     'success': False,
                     'error': 'Failed to compute embedding for live face',
@@ -125,9 +138,15 @@ class FaceVerificationService:
             reference_embeddings = self.reference_embeddings[student_id]
             best_match = False
             best_distance = float('inf')
+            distances = {}
             
+            print(f"[DEBUG] Face verification for student {student_id} - threshold: {threshold}")
+            print(f"[DEBUG] Number of reference embeddings: {len(reference_embeddings)}")
+            
+            # Calculate distances to all reference views
             for view_type, ref_embedding in reference_embeddings.items():
                 distance = np.linalg.norm(live_embedding - ref_embedding)
+                distances[view_type] = distance
                 print(f"[DEBUG] {view_type} view distance: {distance:.4f}, threshold: {threshold}")
                 
                 if distance < best_distance:
@@ -136,16 +155,44 @@ class FaceVerificationService:
                 # If any reference matches well enough, consider it the same person
                 if distance < threshold:
                     best_match = True
+                    print(f"[DEBUG] Match found with {view_type} view! Distance: {distance:.4f}")
+            
+            # Enhanced verification logic for 3-angle system
+            if not best_match and len(distances) >= 3:
+                # Calculate average distance and standard deviation
+                avg_distance = np.mean(list(distances.values()))
+                std_distance = np.std(list(distances.values()))
+                
+                print(f"[DEBUG] Enhanced check - Avg distance: {avg_distance:.4f}, Std: {std_distance:.4f}")
+                
+                # If average distance is reasonable and distances are consistent, it might be the same person
+                # with different lighting/angle than reference images
+                if avg_distance < 0.88 and std_distance < 0.12:
+                    best_match = True
+                    print(f"[DEBUG] Enhanced verification passed - consistent distances across all views")
+            
+            # Additional leniency for 3-angle system
+            if not best_match and len(distances) >= 3:
+                # Check if at least 2 out of 3 views are reasonably close
+                close_views = sum(1 for d in distances.values() if d < 0.90)
+                if close_views >= 2:
+                    best_match = True
+                    print(f"[DEBUG] Multi-view verification passed - {close_views}/3 views are close")
             
             # Determine verification result
             verified = best_match
+            
+            print(f"[DEBUG] Final verification result: {verified}, best_distance: {best_distance:.4f}")
+            if len(distances) >= 3:
+                print(f"[DEBUG] All distances: {distances}")
             
             return {
                 'success': True,
                 'verified': verified,
                 'best_distance': float(best_distance),
                 'threshold': threshold,
-                'message': 'Same person detected' if verified else 'Different person detected'
+                'message': 'Same person detected' if verified else 'Different person detected',
+                'distances': distances if len(distances) >= 3 else None
             }
             
         except Exception as e:

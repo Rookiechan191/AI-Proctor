@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import cv2
 import numpy as np
 import base64
-from proctor_detector import ProctorDetector
+from hybrid_verification import HybridVerificationService
 from models import Violation, SessionLocal, Base, engine
 from datetime import datetime, timedelta
 import pytz
@@ -31,7 +31,7 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 # Initialize services
-detector = ProctorDetector()
+hybrid_verifier = HybridVerificationService()
 face_verifier = FaceVerificationService()
 
 FACE_IMAGES_DIR = 'face_images'
@@ -89,44 +89,7 @@ async def get_face_images(student_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class AnalyzeFrameRequest(BaseModel):
-    image: str
-    student_id: str
-    exam_id: str
 
-@app.post("/analyze_frame")
-async def analyze_frame(data: AnalyzeFrameRequest, db: Session = Depends(get_db)):
-    try:
-        image_bytes = base64.b64decode(data.image.split(',')[1])
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        violations = detector.detect_violations(frame)
-
-        current_time = datetime.now(pytz.timezone('Asia/Kolkata'))
-        time_window_start = current_time - timedelta(seconds=DUPLICATE_WINDOW)
-
-        for v_type, is_violation in violations.items():
-            if is_violation:
-                exists = db.query(Violation).filter(
-                    Violation.student_id == data.student_id,
-                    Violation.exam_id == data.exam_id,
-                    Violation.violation_type == v_type,
-                    Violation.timestamp >= time_window_start
-                ).first()
-                if not exists:
-                    db.add(Violation(
-                        student_id=data.student_id,
-                        exam_id=data.exam_id,
-                        violation_type=v_type,
-                        confidence=0.8,
-                        details=f"Detected {v_type}",
-                        timestamp=current_time
-                    ))
-        db.commit()
-        return {"success": True, "violations": violations}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/get_violations")
 async def get_violations(student_id: str, exam_id: str, db: Session = Depends(get_db)):
@@ -205,5 +168,89 @@ async def load_reference_images(data: LoadReferenceRequest):
             "success": success,
             "message": "Reference images loaded successfully" if success else "Failed to load reference images"
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class HybridAnalyzeRequest(BaseModel):
+    image: str
+    student_id: str
+    exam_id: str
+
+@app.post("/hybrid_analyze")
+async def hybrid_analyze(data: HybridAnalyzeRequest, db: Session = Depends(get_db)):
+    try:
+        image_bytes = base64.b64decode(data.image.split(',')[1])
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        # Use hybrid verification
+        result = hybrid_verifier.process_frame(frame, data.student_id)
+        
+        current_time = datetime.now(pytz.timezone('Asia/Kolkata'))
+        time_window_start = current_time - timedelta(seconds=DUPLICATE_WINDOW)
+        
+        # Check for violations and add to database
+        violations = result['violations']
+        for v_type, is_violation in violations.items():
+            if is_violation:
+                exists = db.query(Violation).filter(
+                    Violation.student_id == data.student_id,
+                    Violation.exam_id == data.exam_id,
+                    Violation.violation_type == v_type,
+                    Violation.timestamp >= time_window_start
+                ).first()
+                if not exists:
+                    db.add(Violation(
+                        student_id=data.student_id,
+                        exam_id=data.exam_id,
+                        violation_type=v_type,
+                        confidence=0.8,
+                        details=f"Hybrid detection: {v_type}",
+                        timestamp=current_time
+                    ))
+        
+        db.commit()
+        
+        return {
+            "success": True, 
+            "violations": violations,
+            "verification": result['verification'],
+            "tracked_person_id": result['tracked_person_id']
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tracking_status")
+async def get_tracking_status():
+    try:
+        status = hybrid_verifier.get_tracking_status()
+        return {"success": True, "status": status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/reset_tracking")
+async def reset_tracking():
+    try:
+        hybrid_verifier.reset_tracking()
+        return {"success": True, "message": "Tracking reset successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/device_detection_status")
+async def get_device_detection_status():
+    """Get current device detection status for debugging."""
+    try:
+        status = hybrid_verifier.get_device_detection_status()
+        return {"success": True, "status": status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/multiple_people_detection_status")
+async def get_multiple_people_detection_status():
+    """Get current multiple people detection status for debugging."""
+    try:
+        status = hybrid_verifier.get_multiple_people_detection_status()
+        return {"success": True, "status": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -14,8 +14,15 @@ const Results: React.FC = () => {
   const [violations, setViolations] = useState<Violation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fullscreenExitCount, setFullscreenExitCount] = useState<number | null>(null);
+  const [tabSwitchCount, setTabSwitchCount] = useState<number | null>(null);
 
   useEffect(() => {
+    // Read fullscreen exit count and tab switch count from localStorage
+    const count = localStorage.getItem('fullscreenExitCount');
+    setFullscreenExitCount(count ? parseInt(count, 10) : null);
+    const tabCount = localStorage.getItem('tabSwitchCount');
+    setTabSwitchCount(tabCount ? parseInt(tabCount, 10) : null);
     const fetchViolations = async () => {
       try {
         const studentId = localStorage.getItem('studentId');
@@ -132,17 +139,23 @@ const Results: React.FC = () => {
                         .map(([type, v], idx) => (
                           <tr key={type} className={
                             `border-t border-red-200 ${idx % 2 === 0 ? 'bg-red-50' : 'bg-red-100'} hover:bg-red-200 transition-colors`}
-                          >
+                    >
                             <td className="px-4 py-2 flex items-center font-medium text-red-900">
                               <span className="text-2xl mr-2">{getViolationIcon(type)}</span>
                               <span className="capitalize mr-2">{type.replace('_', ' ')}</span>
                               <span className="ml-auto bg-red-200 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                                {v.timestamps.length}
+                                {type === 'fullscreen_exit' && fullscreenExitCount !== null
+                                  ? fullscreenExitCount
+                                  : type === 'tab_switch' && tabSwitchCount !== null
+                                    ? tabSwitchCount
+                                    : v.timestamps.length}
                               </span>
                             </td>
                             <td className="px-4 py-2 text-red-700 max-w-xs truncate" title={v.details}>{v.details}</td>
                             <td className="px-4 py-2 text-xs text-red-600 max-w-xs overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-red-300 scrollbar-track-red-100" style={{maxWidth: '220px'}} title={v.timestamps.map(ts => formatTimestamp(ts)).join(', ')}>
-                              {v.timestamps.map(ts => formatTimestamp(ts)).join(', ')}
+                              {type === 'fullscreen_exit' || type === 'tab_switch'
+                                ? '' // No timestamps for fullscreen exit or tab switch
+                                : v.timestamps.map(ts => formatTimestamp(ts)).join(', ')}
                             </td>
                             <td className="px-4 py-2 text-xs text-red-700 font-semibold">{Math.round(v.confidence * 100)}%</td>
                           </tr>
