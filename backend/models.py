@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Use PostgreSQL as the default database, targeting the report schema
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres_stage:Qwertyuiop123$@blackbuck-stage.postgres.database.azure.com:5432/postgres-stage')
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
 
 # Create engine and session
 engine = create_engine(DATABASE_URL)
