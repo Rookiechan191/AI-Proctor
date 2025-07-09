@@ -40,16 +40,6 @@ var/
 venv/
 .env
 
-# Database
-*.db
-*.sqlite3
-
-# Model files
-*.pt
-*.pth
-*.h5
-*.weights
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
