@@ -53,3 +53,8 @@ venv/
 
 # OS
 Thumbs.db
+
+# Allow model weights and YOLO files
+!backend/weights/
+!backend/weights/*
+!backend/yolov8n.pt
