@@ -12,3 +12,4 @@ facenet-pytorch>=2.5.0
 pytz>=2023.3 
 uvicorn
 fastapi
+psycopg2-binary
