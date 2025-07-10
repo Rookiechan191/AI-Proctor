@@ -48,8 +48,8 @@ class HybridVerificationService:
         
         # Device detection temporal tracking
         self.device_detection_history = {}
-        self.device_min_duration = 1.0  # Minimum seconds device must be visible
-        self.device_confidence_threshold = 0.5
+        self.device_min_duration = 0.5  # Minimum seconds device must be visible
+        self.device_confidence_threshold = 0.3
         self.device_classes = {67: 'cell phone', 73: 'laptop', 62: 'monitor/tv'}
         
         # Multiple people detection temporal tracking
@@ -62,6 +62,10 @@ class HybridVerificationService:
         }
         self.multiple_people_min_duration = 1.0  # Adjusted: Minimum seconds multiple people must be visible
         self.multiple_people_confidence_threshold = 0.3  # Lowered: Confidence for multiple people
+        
+        self.person_id_counter = 0
+        self.person_id_map = {}  # Maps bbox center to ID
+        self.original_student_id = None  # Preserved original student's person ID
         
     def _pil_to_base64(self, pil_image):
         """Convert PIL image to base64 string."""
@@ -300,93 +304,32 @@ class HybridVerificationService:
             avg_ear > normal_ear_range[1]  # Eyes too wide
         )
     
-    def _assign_person_id(self, persons):
-        """Assign or maintain person ID based on position and size."""
-        if not persons:
-            return None
-            
-        # Get the largest person (closest to camera)
-        largest_person = max(persons, key=lambda p: (p['bbox'][2] - p['bbox'][0]) * (p['bbox'][3] - p['bbox'][1]))
-        
-        if self.tracked_person_id is None:
-            # First time seeing a person, assign ID
-            self.tracked_person_id = f"person_{int(time.time())}"
-            self.person_tracking_history[self.tracked_person_id] = {
-                'first_seen': time.time(),
-                'last_position': largest_person['center'],
-                'bbox_history': [largest_person['bbox']],
-                'last_size': (largest_person['bbox'][2] - largest_person['bbox'][0]) * (largest_person['bbox'][3] - largest_person['bbox'][1])
-            }
-            print(f"[INFO] Assigned person ID: {self.tracked_person_id}")
-        else:
-            # Check if this might be a different person
-            current_size = (largest_person['bbox'][2] - largest_person['bbox'][0]) * (largest_person['bbox'][3] - largest_person['bbox'][1])
-            last_size = self.person_tracking_history[self.tracked_person_id]['last_size']
-            
-            # Calculate position change
-            current_center = largest_person['center']
-            last_center = self.person_tracking_history[self.tracked_person_id]['last_position']
-            position_change = ((current_center[0] - last_center[0])**2 + (current_center[1] - last_center[1])**2)**0.5
-            
-            # Calculate size change ratio
-            size_change_ratio = abs(current_size - last_size) / last_size if last_size > 0 else 0
-            
-            # No longer trigger face verification on position/size change
-            # Only update tracking history below
-        
-        # Update tracking history
-        self.person_tracking_history[self.tracked_person_id]['last_position'] = largest_person['center']
-        self.person_tracking_history[self.tracked_person_id]['bbox_history'].append(largest_person['bbox'])
-        self.person_tracking_history[self.tracked_person_id]['last_size'] = (largest_person['bbox'][2] - largest_person['bbox'][0]) * (largest_person['bbox'][3] - largest_person['bbox'][1])
-        
-        # Keep only last 10 positions
-        if len(self.person_tracking_history[self.tracked_person_id]['bbox_history']) > 10:
-            self.person_tracking_history[self.tracked_person_id]['bbox_history'].pop(0)
-        
-        return self.tracked_person_id
-    
-    def _check_person_disappeared(self, persons):
-        """Check if the tracked person has disappeared."""
-        if self.tracked_person_id is None:
-            return False
-            
-        if not persons:
-            # No persons detected, check if this is a disappearance
-            current_time = time.time()
-            if self.person_last_seen and (current_time - self.person_last_seen) > 2:  # 2 second threshold
-                if not self.person_disappeared:
-                    self.person_disappeared = True
-                    self.face_verification_required = True
-                    print(f"[WARNING] Tracked person {self.tracked_person_id} disappeared")
-                    print(f"[DEBUG] Setting face_verification_required = True")
-                return True
-        else:
-            # Person detected, update last seen
-            if self.person_disappeared:
-                print(f"[DEBUG] Person reappeared after disappearance")
-            self.person_last_seen = time.time()
-            self.person_disappeared = False
-            
-        return False
-    
-    def _should_trigger_face_verification(self):
-        """Determine if face verification should be triggered."""
-        current_time = time.time()
-        
-        # Check cooldown period
-        if (current_time - self.last_verification_time) < self.verification_cooldown:
-            print(f"[DEBUG] Face verification on cooldown: {self.verification_cooldown - (current_time - self.last_verification_time):.1f}s remaining")
-            return False
-            
-        # Trigger if person disappeared and reappeared
-        if self.face_verification_required and not self.person_disappeared:
-            print(f"[DEBUG] Triggering face verification - person reappeared after disappearance")
-            self.face_verification_required = False
-            self.last_verification_time = current_time
-            return True
-            
-        return False
-    
+    def _assign_person_ids(self, persons):
+        # Assign unique IDs to all detected persons based on bbox center proximity
+        assigned_ids = []
+        for person in persons:
+            center = tuple(person['center'])
+            # Find closest existing center
+            min_dist = float('inf')
+            min_id = None
+            for prev_center, pid in self.person_id_map.items():
+                dist = ((center[0] - prev_center[0])**2 + (center[1] - prev_center[1])**2)**0.5
+                if dist < 50:  # Threshold for matching same person
+                    if dist < min_dist:
+                        min_dist = dist
+                        min_id = pid
+            if min_id is not None:
+                person['id'] = min_id
+                assigned_ids.append(min_id)
+            else:
+                self.person_id_counter += 1
+                person['id'] = self.person_id_counter
+                assigned_ids.append(self.person_id_counter)
+            self.person_id_map[center] = person['id']
+        # Remove old IDs not seen in this frame
+        self.person_id_map = {center: pid for center, pid in self.person_id_map.items() if pid in assigned_ids}
+        return persons
+
     def process_frame(self, frame, student_id):
         """
         Process a frame and return verification status and violations.
@@ -416,6 +359,7 @@ class HybridVerificationService:
         try:
             # Detect persons and faces
             persons, faces = self._detect_person_and_face(frame)
+            persons = self._assign_person_ids(persons)
             
             # Store detection boxes for frontend visualization
             detection_boxes['persons'] = persons
@@ -426,12 +370,63 @@ class HybridVerificationService:
             if multiple_people_detected:
                 violations['multiple_people'] = True
                 verification_result['message'] = 'Multiple people detected'
+                # New logic: Run face verification for all detected persons
+                for person in persons:
+                    # Extract bounding box
+                    bbox = person['bbox']
+                    x1, y1, x2, y2 = map(int, bbox)
+                    person_region = frame[y1:y2, x1:x2]
+                    if person_region.size > 0:
+                        # Convert to base64 for face verification
+                        try:
+                            frame_rgb = cv2.cvtColor(person_region, cv2.COLOR_BGR2RGB)
+                            pil_image = Image.fromarray(frame_rgb)
+                            frame_base64 = self._pil_to_base64(pil_image)
+                            face_result = self.face_verifier.verify_face(student_id, frame_base64)
+                            if face_result['success'] and not face_result['verified']:
+                                violations['identity_mismatch'] = True
+                                verification_result['message'] = 'Identity verification failed - different person detected (multiple people)'
+                                break  # No need to check further if a proxy is found
+                        except Exception as e:
+                            print(f"[ERROR] Face verification for multiple people failed: {str(e)}")
             
             # Comprehensive violation detection using MediaPipe and YOLO
             self._detect_comprehensive_violations(frame, violations)
             
+            # Track the main person (largest bbox)
+            if persons:
+                main_person = max(persons, key=lambda p: (p['bbox'][2] - p['bbox'][0]) * (p['bbox'][3] - p['bbox'][1]))
+                main_person_id = main_person['id']
+                # On first run, set the original student ID after successful verification
+                if self.original_student_id is None:
+                    # Run face verification for the first main person
+                    x1, y1, x2, y2 = map(int, main_person['bbox'])
+                    person_region = frame[y1:y2, x1:x2]
+                    if person_region.size > 0:
+                        frame_rgb = cv2.cvtColor(person_region, cv2.COLOR_BGR2RGB)
+                        pil_image = Image.fromarray(frame_rgb)
+                        frame_base64 = self._pil_to_base64(pil_image)
+                        face_result = self.face_verifier.verify_face(student_id, frame_base64)
+                        if face_result['success'] and face_result['verified']:
+                            self.original_student_id = main_person_id
+                            self.tracked_person_id = main_person_id
+                else:
+                    # If the tracked person ID changes, verify the new person
+                    if self.tracked_person_id != main_person_id:
+                        x1, y1, x2, y2 = map(int, main_person['bbox'])
+                        person_region = frame[y1:y2, x1:x2]
+                        if person_region.size > 0:
+                            frame_rgb = cv2.cvtColor(person_region, cv2.COLOR_BGR2RGB)
+                            pil_image = Image.fromarray(frame_rgb)
+                            frame_base64 = self._pil_to_base64(pil_image)
+                            face_result = self.face_verifier.verify_face(student_id, frame_base64)
+                            if face_result['success'] and not face_result['verified']:
+                                violations['identity_mismatch'] = True
+                                verification_result['message'] = 'Identity verification failed - tracked person changed and does not match reference'
+                            elif face_result['success'] and face_result['verified']:
+                                self.tracked_person_id = main_person_id
             # Assign person ID and track
-            person_id = self._assign_person_id(persons)
+            person_id = self.tracked_person_id
             if person_id:
                 verification_result['person_tracked'] = True
                 verification_result['message'] = f'Tracking person: {person_id}'
@@ -501,6 +496,9 @@ class HybridVerificationService:
             'consecutive_frames': 0,
             'violation_triggered': False
         }
+        self.person_id_counter = 0
+        self.person_id_map = {}
+        self.original_student_id = None
         print("[INFO] Tracking state reset")
     
     def get_device_detection_status(self):
@@ -628,3 +626,27 @@ class HybridVerificationService:
                 }
         
         return self.multiple_people_detection_history['violation_triggered'] 
+
+    def _check_person_disappeared(self, persons):
+        """Check if the tracked person has disappeared."""
+        if self.tracked_person_id is None:
+            return False
+        
+        if not persons:
+            # No persons detected, check if this is a disappearance
+            current_time = time.time()
+            if self.person_last_seen and (current_time - self.person_last_seen) > 2:  # 2 second threshold
+                if not self.person_disappeared:
+                    self.person_disappeared = True
+                    self.face_verification_required = True
+                    print(f"[WARNING] Tracked person {self.tracked_person_id} disappeared")
+                    print(f"[DEBUG] Setting face_verification_required = True")
+                return True
+        else:
+            # Person detected, update last seen
+            if self.person_disappeared:
+                print(f"[DEBUG] Person reappeared after disappearance")
+            self.person_last_seen = time.time()
+            self.person_disappeared = False
+        
+        return False 

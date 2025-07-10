@@ -93,9 +93,9 @@ graph TD
 ### Backend
 
 1. **Install dependencies:**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
+```bash
+cd backend
+pip install -r requirements.txt
    ```
 2. **Set environment variables:**  
    - `DATABASE_URL` (PostgreSQL connection string)
@@ -109,13 +109,13 @@ graph TD
 ### Frontend
 
 1. **Install dependencies:**
-   ```bash
-   npm install
+```bash
+npm install
    ```
 2. **Run frontend:**
    ```bash
-   npm run dev
-   ```
+npm run dev
+```
 
 ---
 
