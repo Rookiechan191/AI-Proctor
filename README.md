@@ -23,7 +23,7 @@ An intelligent proctoring system that uses computer vision and machine learning 
 - OpenCV
 - MediaPipe
 - YOLOv8
-- Flask
+- FastApi
 
 ## Prerequisites
 
